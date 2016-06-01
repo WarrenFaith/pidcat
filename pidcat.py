@@ -367,7 +367,12 @@ while adb.poll() is None:
   # format tag message using rules
   for matcher in RULES:
     replace = RULES[matcher]
-    message = matcher.sub(replace, message)
+    if level in ['E', 'F']:
+      message = matcher.sub(replace, colorize(message, fg=RED))
+    elif level == 'W':
+      message = matcher.sub(replace, colorize(message, fg=YELLOW))
+    else:
+      message = matcher.sub(replace, message)
 
   linebuf += indent_wrap(message)
   print(linebuf.encode('utf-8'))

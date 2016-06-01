@@ -48,6 +48,7 @@ parser.add_argument('-v', '--version', action='version', version='%(prog)s ' + _
 parser.add_argument('-a', '--all', dest='all', action='store_true', default=False, help='Print all log messages')
 parser.add_argument('--timestamp', dest='add_timestamp', action='store_true', help='Prepend each line of output with the current time.')
 parser.add_argument('-f', '--force-windows-colors', dest='force_windows_colors', action='store_true', default=False, help='Force converting colors to Windows format')
+parser.add_argument('--darcula', dest='darcula', action='store_true', default=False, help='Force black background in case you use light terminal colors')
 
 args = parser.parse_args()
 min_level = LOG_LEVELS_MAP[args.min_level.upper()]
@@ -99,9 +100,15 @@ except ImportError:
 
 BLACK, RED, GREEN, YELLOW, BLUE, MAGENTA, CYAN, WHITE = range(8)
 
-RESET = '\033[0m'
+if (args.darcula):
+  RESET = '\033[40m'
+else:
+  RESET = '\033[0m'
 
 def termcolor(fg=None, bg=None):
+  if (args.darcula):
+    if (fg is BLACK or fg is None) and (bg is BLACK or bg is None):
+      fg = WHITE
   codes = []
   if fg is not None: codes.append('3%d' % fg)
   if bg is not None: codes.append('10%d' % bg)
@@ -281,98 +288,101 @@ while True:
       seen_pids = True
       pids.add(pid)
 
-while adb.poll() is None:
-  try:
-    line = adb.stdout.readline().decode('utf-8', 'replace').strip()
-  except KeyboardInterrupt:
-    break
-  if len(line) == 0:
-    break
+try:
+  while adb.poll() is None:
+    try:
+      line = adb.stdout.readline().decode('utf-8', 'replace').strip()
+    except KeyboardInterrupt:
+      break
+    if len(line) == 0:
+      break
 
-  bug_line = BUG_LINE.match(line)
-  if bug_line is not None:
-    continue
+    bug_line = BUG_LINE.match(line)
+    if bug_line is not None:
+      continue
 
-  log_line = LOG_LINE.match(line)
-  if log_line is None:
-    continue
+    log_line = LOG_LINE.match(line)
+    if log_line is None:
+      continue
 
-  time, level, tag, owner, message = log_line.groups()
-  tag = tag.strip()
-  start = parse_start_proc(line)
-  if start:
-    line_package, target, line_pid, line_uid, line_gids = start
-    if match_packages(line_package):
-      pids.add(line_pid)
+    time, level, tag, owner, message = log_line.groups()
+    tag = tag.strip()
+    start = parse_start_proc(line)
+    if start:
+      line_package, target, line_pid, line_uid, line_gids = start
+      if match_packages(line_package):
+        pids.add(line_pid)
 
-      app_pid = line_pid
+        app_pid = line_pid
 
+        linebuf  = '\n'
+        linebuf += colorize(' ' * (header_size - 1), bg=WHITE)
+        linebuf += indent_wrap(' Process %s created for %s\n' % (line_package, target))
+        linebuf += colorize(' ' * (header_size - 1), bg=WHITE)
+        linebuf += ' PID: %s   UID: %s   GIDs: %s' % (line_pid, line_uid, line_gids)
+        linebuf += '\n'
+        print(linebuf)
+        last_tag = None # Ensure next log gets a tag printed
+
+    dead_pid, dead_pname = parse_death(tag, message)
+    if dead_pid:
+      pids.remove(dead_pid)
       linebuf  = '\n'
-      linebuf += colorize(' ' * (header_size - 1), bg=WHITE)
-      linebuf += indent_wrap(' Process %s created for %s\n' % (line_package, target))
-      linebuf += colorize(' ' * (header_size - 1), bg=WHITE)
-      linebuf += ' PID: %s   UID: %s   GIDs: %s' % (line_pid, line_uid, line_gids)
+      linebuf += colorize(' ' * (header_size - 1), bg=RED)
+      linebuf += ' Process %s (PID: %s) ended' % (dead_pname, dead_pid)
       linebuf += '\n'
       print(linebuf)
       last_tag = None # Ensure next log gets a tag printed
 
-  dead_pid, dead_pname = parse_death(tag, message)
-  if dead_pid:
-    pids.remove(dead_pid)
-    linebuf  = '\n'
-    linebuf += colorize(' ' * (header_size - 1), bg=RED)
-    linebuf += ' Process %s (PID: %s) ended' % (dead_pname, dead_pid)
-    linebuf += '\n'
-    print(linebuf)
-    last_tag = None # Ensure next log gets a tag printed
+    # Make sure the backtrace is printed after a native crash
+    if tag == 'DEBUG':
+      bt_line = BACKTRACE_LINE.match(message.lstrip())
+      if bt_line is not None:
+        message = message.lstrip()
+        owner = app_pid
 
-  # Make sure the backtrace is printed after a native crash
-  if tag == 'DEBUG':
-    bt_line = BACKTRACE_LINE.match(message.lstrip())
-    if bt_line is not None:
-      message = message.lstrip()
-      owner = app_pid
+    if not args.all and owner not in pids:
+      continue
+    if level in LOG_LEVELS_MAP and LOG_LEVELS_MAP[level] < min_level:
+      continue
+    if args.ignored_tag and tag_in_tags_regex(tag, args.ignored_tag):
+      continue
+    if args.tag and not tag_in_tags_regex(tag, args.tag):
+      continue
 
-  if not args.all and owner not in pids:
-    continue
-  if level in LOG_LEVELS_MAP and LOG_LEVELS_MAP[level] < min_level:
-    continue
-  if args.ignored_tag and tag_in_tags_regex(tag, args.ignored_tag):
-    continue
-  if args.tag and not tag_in_tags_regex(tag, args.tag):
-    continue
+    linebuf = ''
 
-  linebuf = ''
+    if args.tag_width > 0:
+      # right-align tag title and allocate color if needed
+      if tag != last_tag or args.always_tags:
+        last_tag = tag
+        color = allocate_color(tag)
+        tag = tag[-args.tag_width:].rjust(args.tag_width)
+        linebuf += colorize(tag, fg=color)
+      else:
+        linebuf += ' ' * args.tag_width
+      linebuf += ' '
 
-  if args.tag_width > 0:
-    # right-align tag title and allocate color if needed
-    if tag != last_tag or args.always_tags:
-      last_tag = tag
-      color = allocate_color(tag)
-      tag = tag[-args.tag_width:].rjust(args.tag_width)
-      linebuf += colorize(tag, fg=color)
+    # write out level colored edge
+    if level in TAGTYPES:
+      linebuf += TAGTYPES[level]
     else:
-      linebuf += ' ' * args.tag_width
+      linebuf += ' ' + level + ' '
     linebuf += ' '
+    if args.add_timestamp:
+      linebuf = time + ' ' + linebuf
 
-  # write out level colored edge
-  if level in TAGTYPES:
-    linebuf += TAGTYPES[level]
-  else:
-    linebuf += ' ' + level + ' '
-  linebuf += ' '
-  if args.add_timestamp:
-    linebuf = time + ' ' + linebuf
+    # format tag message using rules
+    for matcher in RULES:
+      replace = RULES[matcher]
+      if level in ['E', 'F']:
+        message = matcher.sub(replace, colorize(message, fg=RED))
+      elif level == 'W':
+        message = matcher.sub(replace, colorize(message, fg=YELLOW))
+      else:
+        message = matcher.sub(replace, colorize(message))
 
-  # format tag message using rules
-  for matcher in RULES:
-    replace = RULES[matcher]
-    if level in ['E', 'F']:
-      message = matcher.sub(replace, colorize(message, fg=RED))
-    elif level == 'W':
-      message = matcher.sub(replace, colorize(message, fg=YELLOW))
-    else:
-      message = matcher.sub(replace, message)
-
-  linebuf += indent_wrap(message)
-  print(linebuf.encode('utf-8'))
+    linebuf += indent_wrap(message)
+    print(linebuf.encode('utf-8'))
+finally:
+  print("\033[0m")

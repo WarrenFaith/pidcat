@@ -1,3 +1,13 @@
+Short Note
+==========
+
+*Latest Version:* 2.1.0 - [Changelog](https://github.com/WarrenFaith/pidcat/blob/master/CHANGELOG.md)
+
+As the [original project](https://github.com/JakeWharton/pidcat) seems to be out of maintenance, this fork tries to fill in the gap.
+
+This fork is not the one distributed outside of github. Any installation instruction you find might link to the original project.
+Use this fork by either cloning or downloading the pidcat.py directly!
+
 PID Cat
 =======
 
@@ -25,16 +35,7 @@ Install
 
 Get the script:
 
- *  OS X: Use [Homebrew][2].
-
-         brew install pidcat
-
-    If you need to install the latest development version
-
-        brew unlink pidcat  
-        brew install --HEAD pidcat
-  
- * Others: Download the `pidcat.py` and place it on your PATH.
+ * Download the `pidcat.py` and place it on your PATH.
 
 
 Make sure that `adb` from the [Android SDK][3] is on your PATH. This script will

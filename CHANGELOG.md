@@ -1,6 +1,17 @@
 Change Log
 ==========
 
+Version 2.1.0 *(2016-06-01)*
+----------------------------
+
+ * New: Timestamp support using `--timestamp` parameter
+ * New: coloring of messages based on their log level:
+   `W` is now yellow text
+   `E` and `F` are now red text
+ * New: Fix colors on Windows. Use options `-f` / `--force-windows-colors` to force conversion
+   in case a terminal appears to be a tty. Requires module `colorama`
+
+
 Version 2.0.0 *(2015-05-25)*
 ----------------------------
 
